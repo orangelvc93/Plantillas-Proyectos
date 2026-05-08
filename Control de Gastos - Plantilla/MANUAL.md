@@ -34,8 +34,35 @@ npm run dev
 
 Servicios:
 
-- Web: `http://localhost:5173/`
+- Web: `http://localhost:5174/`
 - API JSON: `http://localhost:3002/api/data`
+
+## Uso local persistente
+
+Para conservar lo que agregues, ejecuta siempre la app desde la carpeta del proyecto:
+
+```powershell
+cd "C:\Users\orangel.valdespino\Desktop\Control de Gastos - Plantilla"
+npm run dev
+```
+
+Mientras `npm run dev` este abierto, cada cambio se guarda en:
+
+`db/years/<año>.json`
+
+Cuando cierres la terminal o se detenga el proceso, los datos ya guardados permanecen en ese archivo. La proxima vez que ejecutes `npm run dev`, la app volvera a leer el mismo JSON.
+
+Si ves `failed to fetch` o un mensaje de `Sin API local`, significa que abriste la web sin tener corriendo la API local. En ese caso vuelve a ejecutar `npm run dev`.
+
+Tambien puedes usar una version compilada local con un solo servidor:
+
+```powershell
+npm run local
+```
+
+Luego abre:
+
+`http://localhost:3002/`
 
 ## Base de datos JSON
 
@@ -44,6 +71,15 @@ El archivo principal esta en:
 `db/years/<año>.json`
 
 Cada cambio realizado desde la web se guarda automaticamente en el JSON.
+
+Puedes cambiar la carpeta donde el backend guarda la base usando `DATA_DIR`:
+
+```powershell
+$env:DATA_DIR="C:\ruta\persistente\control-gastos-db"
+npm run api
+```
+
+En produccion, esa ruta debe apuntar a almacenamiento persistente. Si el hosting borra el disco al reiniciar, los JSON tambien se perderan.
 
 ## Años
 

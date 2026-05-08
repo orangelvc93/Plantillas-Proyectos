@@ -7,8 +7,9 @@ import seedData from '../src/data.json' with { type: 'json' };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
-const dbDir = path.join(rootDir, 'db');
+const dbDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(rootDir, 'db');
 const yearsDir = path.join(dbDir, 'years');
+const distDir = path.join(rootDir, 'dist');
 const legacyJsonPath = path.join(dbDir, 'data.json');
 const defaultYear = String(new Date().getFullYear());
 const port = process.env.PORT || 3002;
@@ -45,9 +46,26 @@ app.post('/api/reset', async (request, response) => {
   response.json(await readJsonData(year));
 });
 
+app.use(express.static(distDir));
+
+app.use(async (request, response, next) => {
+  if (request.method !== 'GET' || request.path.startsWith('/api')) {
+    next();
+    return;
+  }
+
+  try {
+    await fs.access(path.join(distDir, 'index.html'));
+    response.sendFile(path.join(distDir, 'index.html'));
+  } catch {
+    next();
+  }
+});
+
 app.listen(port, () => {
   console.log(`API JSON lista en http://localhost:${port}`);
   console.log(`Base por años: ${yearsDir}`);
+  console.log(`App compilada: http://localhost:${port} (ejecuta npm run build si no existe dist)`);
 });
 
 async function ensureJsonDatabase(year, blank = false) {
@@ -84,7 +102,10 @@ async function readJsonData(year) {
 
 async function writeJsonData(year, data) {
   await fs.mkdir(yearsDir, { recursive: true });
-  await fs.writeFile(getYearPath(year), `${JSON.stringify(normalizeData(data), null, 2)}\n`, 'utf8');
+  const jsonPath = getYearPath(year);
+  const tempPath = `${jsonPath}.${process.pid}.${Date.now()}.tmp`;
+  await fs.writeFile(tempPath, `${JSON.stringify(normalizeData(data), null, 2)}\n`, 'utf8');
+  await fs.rename(tempPath, jsonPath);
 }
 
 function getYear(request) {

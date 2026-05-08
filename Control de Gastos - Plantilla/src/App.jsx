@@ -15,6 +15,14 @@ const tabMeta = {
 
 const money = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
 
+function apiErrorMessage(error) {
+  if (error instanceof TypeError && error.message === 'Failed to fetch') {
+    return 'No se pudo conectar con la API local. Ejecuta npm run dev o npm run local antes de guardar cambios.';
+  }
+
+  return error?.message ?? 'Error desconocido de conexion local';
+}
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -56,6 +64,21 @@ function withJournal(data, action, detail = '') {
       { date: new Date().toLocaleString('es-EC'), action, detail: typeof detail === 'string' ? detail : JSON.stringify(detail) },
     ],
   };
+}
+
+async function requestJson(path, options) {
+  let response;
+  try {
+    response = await fetch(`${apiBase}${path}`, options);
+  } catch (error) {
+    throw new Error(apiErrorMessage(error));
+  }
+
+  if (!response.ok) {
+    throw new Error(`La API respondio con error ${response.status}`);
+  }
+
+  return response.json();
 }
 
 function App() {
@@ -109,44 +132,50 @@ function App() {
 
   async function fetchYears() {
     try {
-      const response = await fetch(`${apiBase}/years`);
-      if (!response.ok) throw new Error('No se pudieron leer los años');
-      const payload = await response.json();
+      const payload = await requestJson('/years');
       setYears(payload.years);
       setActiveYear(payload.currentYear);
     } catch (error) {
-      setSyncStatus(`Usando año local: ${error.message}`);
+      setSyncStatus(`Sin API local: ${error.message}`);
     }
   }
 
   async function fetchData(year = activeYear) {
     try {
-      const response = await fetch(`${apiBase}/data?year=${year}`);
-      if (!response.ok) throw new Error('No se pudo leer el JSON');
-      setData(await response.json());
+      setData(await requestJson(`/data?year=${year}`));
       setSyncStatus(`Sincronizado con db/years/${year}.json`);
     } catch (error) {
-      setSyncStatus(`Usando respaldo: ${error.message}`);
+      setSyncStatus(`Usando respaldo inicial: ${error.message}`);
     }
   }
 
   async function saveData(nextData, message, detail = '') {
     const journaledData = withJournal(nextData, message, detail);
-    const response = await fetch(`${apiBase}/data?year=${activeYear}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(journaledData),
-    });
-    const saved = await response.json();
-    setData(saved);
-    setSyncStatus(message);
+    try {
+      const saved = await requestJson(`/data?year=${activeYear}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(journaledData),
+      });
+      setData(saved);
+      setSyncStatus(message);
+      return true;
+    } catch (error) {
+      setSyncStatus(`No guardado: ${error.message}`);
+      window.alert(`No se pudo guardar el cambio. ${error.message}`);
+      return false;
+    }
   }
 
   async function resetData() {
     if (!window.confirm('Estas seguro de que quieres restaurar el JSON inicial? Se reemplazaran los datos actuales.')) return;
-    const response = await fetch(`${apiBase}/reset?year=${activeYear}`, { method: 'POST' });
-    setData(await response.json());
-    setSyncStatus('JSON restaurado con datos iniciales');
+    try {
+      setData(await requestJson(`/reset?year=${activeYear}`, { method: 'POST' }));
+      setSyncStatus('JSON restaurado con datos iniciales');
+    } catch (error) {
+      setSyncStatus(`No restaurado: ${error.message}`);
+      window.alert(`No se pudo restaurar. ${error.message}`);
+    }
   }
 
   async function createYear() {
@@ -156,29 +185,35 @@ function App() {
       window.alert('Ingresa un año válido de 4 dígitos.');
       return;
     }
-    const response = await fetch(`${apiBase}/years`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ year }),
-    });
-    const payload = await response.json();
-    setYears(payload.years);
-    setActiveYear(payload.currentYear);
-    setSyncStatus(`Año ${payload.currentYear} creado`);
+    try {
+      const payload = await requestJson('/years', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year }),
+      });
+      setYears(payload.years);
+      setActiveYear(payload.currentYear);
+      setSyncStatus(`Año ${payload.currentYear} creado`);
+    } catch (error) {
+      setSyncStatus(`Año no creado: ${error.message}`);
+      window.alert(`No se pudo crear el año. ${error.message}`);
+    }
   }
 
   async function addPayment(event) {
     event.preventDefault();
     const nextData = { ...data, payments: [...data.payments, { ...paymentForm, amount: toNumber(paymentForm.amount) }] };
-    await saveData(nextData, 'Pago guardado en JSON', paymentForm);
-    setPaymentForm(emptyPayment(selectedMonth));
+    if (await saveData(nextData, 'Pago guardado en JSON', paymentForm)) {
+      setPaymentForm(emptyPayment(selectedMonth));
+    }
   }
 
   async function addIncome(event) {
     event.preventDefault();
     const nextData = { ...data, income: [...data.income, { ...incomeForm, amount: toNumber(incomeForm.amount) }] };
-    await saveData(nextData, 'Ganancia guardada en JSON', incomeForm);
-    setIncomeForm(emptyIncome(selectedMonth));
+    if (await saveData(nextData, 'Ganancia guardada en JSON', incomeForm)) {
+      setIncomeForm(emptyIncome(selectedMonth));
+    }
   }
 
   async function updateCollection(collection, updater, message, detail = '') {
